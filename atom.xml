@@ -1,25 +1,89 @@
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
-  <title>Hexo</title>
+  <title>boomler的杂记</title>
   
   
   <link href="/atom.xml" rel="self"/>
   
-  <link href="http://yoursite.com/"/>
-  <updated>2018-04-14T06:32:29.521Z</updated>
-  <id>http://yoursite.com/</id>
+  <link href="https://haowang-tw.github.io/"/>
+  <updated>2018-04-23T03:45:22.427Z</updated>
+  <id>https://haowang-tw.github.io/</id>
   
   <author>
-    <name>John Doe</name>
+    <name>boomler</name>
     
   </author>
   
   <generator uri="http://hexo.io/">Hexo</generator>
   
   <entry>
+    <title>对一个离线版网站的项目总结</title>
+    <link href="https://haowang-tw.github.io/2018/04/16/%E9%A1%B9%E7%9B%AE%E6%80%BB%E7%BB%93/%E8%BD%A6%E5%B1%95%E9%A1%B9%E7%9B%AE%E6%80%BB%E7%BB%93/"/>
+    <id>https://haowang-tw.github.io/2018/04/16/项目总结/车展项目总结/</id>
+    <published>2018-04-16T05:44:04.303Z</published>
+    <updated>2018-04-23T03:45:22.427Z</updated>
+    
+    <content type="html"><![CDATA[<p>2018年3月到4月在做一个车展项目，该项目实际上是将该公司线上购车网站转换成离线版，打包到ipad上，最终使得车展的参会者能够在iPad上体验线上购车和购买售后套餐的流程。<br>由于我们已经有了线上版本，那么把代码拷贝过来，并将数据缓存到本地上就好了。将线上数据缓存到本地是本次项目的难点。<br><a id="more"></a></p><h2 id="图片、视频、字体等资源"><a href="#图片、视频、字体等资源" class="headerlink" title="图片、视频、字体等资源"></a>图片、视频、字体等资源</h2><p>对于一些静态资源文件，如js、css、image等直接下载到本地，并改写路径即可。<br>使用gsed重写部分文件路径。<br>例如我们对字体进行了这样的处理，在<code>dist/static/js</code>目录下的文件中找到对字体文件的使用，将路径改掉：<br><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">gsed -i -E &apos;s#\/\w+-ec.woff#static/font\0#g&apos; dist/static/js/*.js;</span><br><span class="line">mkdir dist/static/font;</span><br><span class="line">mv dist/*-ec* dist/static/font</span><br></pre></td></tr></table></figure></p><h2 id="后端数据"><a href="#后端数据" class="headerlink" title="后端数据"></a>后端数据</h2><blockquote><p><strong> PouchDB是受 Apache CouchDB启发为Web设计的一款占用空间少的数据库。它尤其适合于需要基于浏览器的可离线使用的存储方案的移动应用。</strong></p></blockquote><p>我们的做法是在http模块加一个<strong>拦截器</strong>， 每一个请求通过时，将其url作为主键，将其返回值和状态码存储到<code>PouchDB</code>中。具体代码如下：<br><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">this.db.put(&#123;</span><br><span class="line">    _id: request.getUrl(),  // 使用url作为id</span><br><span class="line">    response: &#123;</span><br><span class="line">    body: preProcess(response.json()),  // 存储返回值</span><br><span class="line">    options: &#123;status: response.status&#125;  // 存储http状态码</span><br><span class="line">    &#125;</span><br><span class="line">&#125;)</span><br></pre></td></tr></table></figure></p><p>我们加入拦截器之后，必须设法触发所有的请求，这样才能保证<code>pouchDB</code>存储了所有的http请求。那这个工作量如何呢？</p><p>如果一个商品列表页面有十个商品， 那么有10个链接通往商品详情页面，如果每个商品详情页面又有3个请求去拉取该商品各部分信息。那么仅仅这两个页面就有<code>10 + 10 * 3</code>共40个不同的http请求要发出，向下面这样：<br><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">get /products</span><br><span class="line">get /products/1</span><br><span class="line">get /products/2</span><br><span class="line">get /products/3</span><br><span class="line">get /products/4</span><br><span class="line">···</span><br><span class="line">get /products/10</span><br><span class="line"></span><br><span class="line">get /products/1/price</span><br><span class="line">get /products/2/price</span><br><span class="line">get /products/3/price</span><br><span class="line">get /products/4/price</span><br><span class="line">···</span><br></pre></td></tr></table></figure></p><p>我们发现如果想要将系统所有可能的http请求触发一遍几乎是不可能，即使强行人工去做，也可能存在遗漏。在这种情况下，我们对一些数据和接口做了处理。比如商品列表接口本来要返回200件商品，我们只返回10件商品，具体办法是将商品列表请求指向本地商品json数据。<br><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">getBrandClass: vue.resource(&apos;./static/data/brands&#123;/brand&#125;/all-classes.json&apos;),</span><br><span class="line">allClasses: vue.resource(&apos;./static/data/all-classes/all-classes.json&apos;),</span><br></pre></td></tr></table></figure></p><p><strong>更改一些接口返回的数据，使得整体的工作量可控。</strong><br>其他减小工作量的举措：</p><ul><li>车系列表中有40多种车，但只会随机跳转到两个车辆详情页面</li><li>无论选择购车城市在哪儿，都按照在北京处理（往后传递的参数都是北京）。</li><li>其他类似处理</li></ul><p>最后，pouchDB总共缓存了200+请求数据， 本地大概有十几个json数据集。</p><h2 id="对技术方案的思考"><a href="#对技术方案的思考" class="headerlink" title="对技术方案的思考"></a>对技术方案的思考</h2><p>在将一个网站整体静态化的过程中，使用直接缓存所有http请求的方式使得几乎不需要对代码做出更改，改代码的工作主要是去除登录验证，以及部分参数处理逻辑。<br>但http请求往往具有相关性，比如列表页返回列表项的id为[1, 2, 3]，那么详情页面使用的参数肯定是[1, 2, 3]。这样的话如果列表页面返回的数据变了，详情页等后续页面的缓存数据也就全失效了。我们的解决方案是开发过程中不去管pouchDB，还是直接使用线上数据和本地json数据集。所有的开发完成之后，并且需求不再变动之后才会让QA或其他负责人去遍历所有页面和各种http请求组合，做数据缓存的工作。</p><h2 id="打包"><a href="#打包" class="headerlink" title="打包"></a>打包</h2><p>开发完成之后， 使用Cordova打成iPad上能使用的包，但有一点需要注意的是cordova使用的浏览器内核版本，低版本的内核性能较差，在列表滚动和跳转的时候感受到了明显的掉帧，最终升级内核版本解决了这个问题。</p><p>–END–</p>]]></content>
+    
+    <summary type="html">
+    
+      &lt;p&gt;2018年3月到4月在做一个车展项目，该项目实际上是将该公司线上购车网站转换成离线版，打包到ipad上，最终使得车展的参会者能够在iPad上体验线上购车和购买售后套餐的流程。&lt;br&gt;由于我们已经有了线上版本，那么把代码拷贝过来，并将数据缓存到本地上就好了。将线上数据缓存到本地是本次项目的难点。&lt;br&gt;
+    
+    </summary>
+    
+    
+      <category term="离线应用" scheme="https://haowang-tw.github.io/tags/%E7%A6%BB%E7%BA%BF%E5%BA%94%E7%94%A8/"/>
+    
+      <category term="cordova" scheme="https://haowang-tw.github.io/tags/cordova/"/>
+    
+      <category term="项目总结" scheme="https://haowang-tw.github.io/tags/%E9%A1%B9%E7%9B%AE%E6%80%BB%E7%BB%93/"/>
+    
+  </entry>
+  
+  <entry>
+    <title></title>
+    <link href="https://haowang-tw.github.io/2018/04/16/git-rm/"/>
+    <id>https://haowang-tw.github.io/2018/04/16/git-rm/</id>
+    <published>2018-04-16T05:41:04.544Z</published>
+    <updated>2018-04-16T05:42:10.437Z</updated>
+    
+    <content type="html"><![CDATA[<p><code>rm</code>意为删除文件，但是可以跟不同的参数来达到不同的效果。</p><h3 id="场景"><a href="#场景" class="headerlink" title="场景"></a>场景</h3><p>下午醒来，睡眼朦胧的你开始提交代码了，混混沌沌地使用了<code>git add  .</code>。<br>然后突然一个激灵，窝草，我得确认一下我add了啥东西，然后用了<code>git status -s</code>简要看了一下要提交的东西。<br><img src="http://upload-images.jianshu.io/upload_images/7515763-239a35649465139b.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240" alt="好像做错了什么"></p><p>发现已经add的文件中间华丽丽地有一个<code>A_UNWANTED_FILE.md</code>。<br>不过还好，幸亏我没有commit并且直接push。<br><img src="http://upload-images.jianshu.io/upload_images/7515763-d79a2ee01c877362.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240" alt="image.png"></p><h3 id="老板说过要保证代码库的纯洁性！！！"><a href="#老板说过要保证代码库的纯洁性！！！" class="headerlink" title="老板说过要保证代码库的纯洁性！！！"></a>老板说过要保证代码库的纯洁性！！！</h3><p>幸亏我知道这个命令：</p><h4 id="git-rm-cached-FILE-NAME"><a href="#git-rm-cached-FILE-NAME" class="headerlink" title="git rm --cached FILE_NAME"></a><code>git rm --cached FILE_NAME</code></h4><p><img src="http://upload-images.jianshu.io/upload_images/7515763-387c30c15c42434a.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240" alt="image.png"></p><p><img src="http://upload-images.jianshu.io/upload_images/7515763-3666f6e97544f61f.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240" alt="又没出错，飘飘然"><br>如果不加<code>--cached</code>，会有以下结果：<br><img src="http://upload-images.jianshu.io/upload_images/7515763-26b086835b6a4d17.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240" alt="image.png"><br>会提示已经staged，不能删除。</p><p>另外提示中也给了另一个<code>-f</code>选项，使用<code>-f</code>会将文件从暂存区中删除，并且删除原文件。就像这样：<br><img src="http://upload-images.jianshu.io/upload_images/7515763-a50fc672fd2b89af.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240" alt="image.png"></p><p>另外一个比较有意思的选项是<code>-n</code> 是<code>--dry-run</code>的简写。大致是我删除之前先看看会删除哪些东西，并不会有实际的影响。</p>]]></content>
+    
+    <summary type="html">
+    
+      
+      
+        &lt;p&gt;&lt;code&gt;rm&lt;/code&gt;意为删除文件，但是可以跟不同的参数来达到不同的效果。&lt;/p&gt;
+&lt;h3 id=&quot;场景&quot;&gt;&lt;a href=&quot;#场景&quot; class=&quot;headerlink&quot; title=&quot;场景&quot;&gt;&lt;/a&gt;场景&lt;/h3&gt;&lt;p&gt;下午醒来，睡眼朦胧的你开始提交代码了，混混
+      
+    
+    </summary>
+    
+    
+  </entry>
+  
+  <entry>
+    <title>漫谈JSONP以及&lt;img&gt;的onLoad和onError事件</title>
+    <link href="https://haowang-tw.github.io/2018/04/15/jsonp-img/"/>
+    <id>https://haowang-tw.github.io/2018/04/15/jsonp-img/</id>
+    <published>2018-04-15T02:05:00.651Z</published>
+    <updated>2018-04-16T05:40:39.579Z</updated>
+    
+    <content type="html"><![CDATA[<p>利用jsonp进行跨域已经是老生常谈了。主要原理是浏览器解析<code>&lt;script&gt;</code>标签的时候，会用script的src属性去发一个网络请求，并将response的东西当做javascript去执行。而浏览器对js脚本并没有做跨域限制。<br><a id="more"></a><br><strong>一个简单的jsonp例子</strong><br><figure class="highlight javascript"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">const</span> url = <span class="string">'http://www.xxx.com/api/someThing?query=WITH_SOME_DATA&amp;callback=handleResponse'</span></span><br><span class="line"><span class="keyword">const</span> scriptElement = <span class="built_in">document</span>.createElement(<span class="string">'script'</span>);</span><br><span class="line">scriptElement.src = url;</span><br><span class="line"><span class="built_in">document</span>.body.appendChild(scriptElement)</span><br></pre></td></tr></table></figure></p><p>JSONP的核心在于下面几点：</p><ul><li>创建一个script标签，设置src为要调用的api并且看情况携带一些数据或者指定回调；</li><li>将标签添加到html文档中；</li><li>浏览器会自动根据src请求数据，并将response理解为Javascript执行。<br>这里假象了一下如果后端是nodejs的话大概会怎么做：<figure class="highlight javascript"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">const</span> callback = req.query.callback;</span><br><span class="line"><span class="keyword">const</span>  data = ... <span class="comment">// </span></span><br><span class="line"><span class="keyword">const</span> response = <span class="string">`<span class="subst">$&#123;callback&#125;</span>(<span class="subst">$&#123;<span class="built_in">JSON</span>.stringify(data)&#125;</span>)`</span></span><br></pre></td></tr></table></figure></li></ul><p>关键点在于：<br><strong>后端的返回数据一定是可执行的JavaScript代码！！</strong><br><strong>后端的返回数据一定是可执行的JavaScript代码！！</strong><br><strong>后端的返回数据一定是可执行的JavaScript代码！！</strong><br>所以刚刚我在response那里实际上拼接了一个函数调用。<br>那么回到浏览器这边，浏览器拿到<code>CALLBACK_NAME(&#39;&#39;some data&quot;)</code><br>那么就开始执行这个函数了。那么同时就要求<strong>前端要实现约定的回调函数，并暴露到全局环境</strong></p><h2 id="如果换做img标签来做这些事情"><a href="#如果换做img标签来做这些事情" class="headerlink" title="如果换做img标签来做这些事情"></a>如果换做img标签来做这些事情</h2><p>同理解析<img>等元素，同样没有对域做安全限制。所以理论上只要能发出跨域的网络请求，都能用来实现跨域。<br>而大家总会使用script标签来做跨域无非是因为script标签能发出请求，并且<strong>能放一些代码放在回应里面，达到回调的效果</strong>。</p><p>所以理论上来说，如果考虑回调，需要使用script，使用jsonp技术。那么如果只是单纯地想跨域发一个request，那么选择script或者img等元素也无关紧要了。</p><h2 id="img其实也能做一些事情"><a href="#img其实也能做一些事情" class="headerlink" title="img其实也能做一些事情"></a>img其实也能做一些事情</h2><p>img元素能添加<code>onError</code> <code>onLoad</code> 属性，用于监听加载失败或者加载成功。<br>这意味着img实现请求成功或者失败的回调是OK的，但是接收不到server端的数据。</p>]]></content>
+    
+    <summary type="html">
+    
+      &lt;p&gt;利用jsonp进行跨域已经是老生常谈了。主要原理是浏览器解析&lt;code&gt;&amp;lt;script&amp;gt;&lt;/code&gt;标签的时候，会用script的src属性去发一个网络请求，并将response的东西当做javascript去执行。而浏览器对js脚本并没有做跨域限制。&lt;br&gt;
+    
+    </summary>
+    
+    
+  </entry>
+  
+  <entry>
     <title>Hello World</title>
-    <link href="http://yoursite.com/2018/04/14/hello-world/"/>
-    <id>http://yoursite.com/2018/04/14/hello-world/</id>
+    <link href="https://haowang-tw.github.io/2018/04/14/hello-world/"/>
+    <id>https://haowang-tw.github.io/2018/04/14/hello-world/</id>
     <published>2018-04-14T06:32:29.520Z</published>
     <updated>2018-04-14T06:32:29.521Z</updated>
     
